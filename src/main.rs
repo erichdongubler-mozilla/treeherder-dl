@@ -173,6 +173,19 @@ async fn main() {
         .await
         .unwrap();
 
+    jobs.retain(|job| {
+        let is_complete = job.state == "completed";
+        if !is_complete {
+            log::warn!(
+                "skipping incomplete job {} (`{}` on `{}` `{}`)",
+                job.id,
+                job.job_type_name,
+                job.platform,
+                job.platform_option
+            );
+        }
+        is_complete
+    });
     if let Some(job_type_name_regex) = job_type_name_regex {
         jobs.retain(|job| job_type_name_regex.is_match(&job.job_type_name));
     }
