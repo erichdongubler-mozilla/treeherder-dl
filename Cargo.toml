@@ -2,6 +2,7 @@
 name = "treeherder-dl"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/ErichDonGubler/treeherder-dl"
 
 [dependencies]
 clap = { version = "4.4.2", features = ["derive"] }
