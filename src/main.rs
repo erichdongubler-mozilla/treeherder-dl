@@ -196,6 +196,7 @@ async fn main() {
     }
 
     if log::log_enabled!(log::Level::Info) {
+        // OPT: We might not need to do this with only `INFO` enabled.
         let summarized_job_tree = jobs.iter().fold(BTreeMap::new(), |mut acc, job| {
             acc.entry(job.platform.clone())
                 .or_insert_with(BTreeMap::new)
