@@ -1,4 +1,7 @@
-use std::process::exit;
+use std::{
+    collections::{BTreeMap, HashSet},
+    process::exit,
+};
 
 use clap::Parser;
 use regex::Regex;
@@ -92,7 +95,9 @@ impl<'de> serde::de::Deserialize<'de> for Jobs {
         }
         assemble_jobs_from_properties! {
             id,
+            job_group_symbol,
             job_type_name,
+            job_type_symbol,
             platform,
             result,
             state,
@@ -105,7 +110,9 @@ impl<'de> serde::de::Deserialize<'de> for Jobs {
 #[derive(Debug, Deserialize)]
 struct Job {
     id: u32,
+    job_group_symbol: String,
     job_type_name: String,
+    job_type_symbol: String,
     platform: String,
     result: String,
     state: String,
@@ -170,5 +177,32 @@ async fn main() {
         jobs.retain(|job| job_type_name_regex.is_match(&job.job_type_name));
     }
 
-    dbg!(&jobs);
+    if jobs.is_empty() {
+        log::warn!("no jobs selected, exiting");
+        return;
+    }
+
+    if log::log_enabled!(log::Level::Info) {
+        let summarized_job_tree = jobs.iter().fold(BTreeMap::new(), |mut acc, job| {
+            acc.entry(job.platform.clone())
+                .or_insert_with(BTreeMap::new)
+                .entry(job.platform_option.clone())
+                .or_insert_with(BTreeMap::new)
+                .entry(&job.job_group_symbol)
+                .or_insert_with(BTreeMap::new)
+                .entry(&job.job_type_symbol)
+                .or_insert_with(Vec::new)
+                .push(&job.result);
+            acc
+        });
+        log::debug!("summarized job tree: {summarized_job_tree:#?}");
+        log::info!(
+            "selected {} jobs across {} platform/option combos",
+            jobs.len(),
+            jobs.iter()
+                .map(|job| (&job.platform, &job.platform_option))
+                .collect::<HashSet<_>>()
+                .len(),
+        );
+    }
 }
