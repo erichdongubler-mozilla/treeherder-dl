@@ -1,5 +1,7 @@
 use std::{
     collections::{BTreeMap, HashSet},
+    fs,
+    path::PathBuf,
     process::exit,
 };
 
@@ -122,9 +124,14 @@ struct Job {
 
 #[derive(Debug, Parser)]
 struct Cli {
+    #[clap(long)]
+    out_dir: PathBuf,
+    #[clap(long)]
     revision: String,
     #[clap(long = "job-type-re")]
     job_type_name_regex: Option<Regex>,
+    #[clap(long = "artifact")]
+    artifact_names: Vec<String>,
 }
 
 #[tokio::main]
@@ -132,13 +139,16 @@ async fn main() {
     env_logger::init();
 
     let Cli {
+        out_dir,
         revision,
         job_type_name_regex,
+        artifact_names,
     } = Cli::parse();
 
     let client = reqwest::Client::new();
 
     let treeherder_host = "https://treeherder.mozilla.org";
+    let taskcluster_host = "https://firefox-ci-tc.services.mozilla.com";
 
     let revision = client
         .get(format!(
@@ -218,5 +228,56 @@ async fn main() {
                 .collect::<HashSet<_>>()
                 .len(),
         );
+    }
+
+    fs::remove_dir_all(&out_dir).unwrap();
+    let mut task_counts = BTreeMap::new();
+    for job in jobs.iter() {
+        for artifact_name in &artifact_names {
+            let Job {
+                job_group_symbol,
+                job_type_symbol,
+                platform,
+                task_id,
+                platform_option,
+                ..
+            } = job;
+            let artifact = client
+                .get(format!(
+                    "{taskcluster_host}/api/queue/v1/task/{task_id}/runs/0/artifacts/{artifact_name}",
+                ))
+                .send()
+                .await
+                .unwrap()
+                .bytes()
+                .await
+                .unwrap();
+
+            let job_path =
+                format!("{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}");
+
+            let task_count = task_counts.entry(job_path.clone()).or_insert(0);
+            let this_task_idx = *task_count;
+            *task_count += 1;
+
+            let local_artifact_path = {
+                let mut path = out_dir.join(job_path);
+                path.push(&this_task_idx.to_string());
+                path.push(artifact_name);
+                path
+            };
+
+            {
+                let parent_dir = local_artifact_path.parent().unwrap();
+                fs::create_dir_all(parent_dir)
+                    .unwrap_or_else(|e| panic!("failed to create `{}`: {e}", parent_dir.display()));
+            }
+            fs::write(&local_artifact_path, artifact).unwrap_or_else(|e| {
+                panic!(
+                    "failed to write artifact `{}`: {e}",
+                    local_artifact_path.display()
+                )
+            });
+        }
     }
 }
