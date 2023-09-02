@@ -1,5 +1,6 @@
 [package]
 name = "treeherder-dl"
+description = "Download artifacts in bulk from Mozilla's TreeHerder"
 version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/ErichDonGubler/treeherder-dl"
