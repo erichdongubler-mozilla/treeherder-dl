@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, HashSet},
-    fs,
+    fs, io,
     path::PathBuf,
     process::exit,
 };
@@ -230,7 +230,12 @@ async fn main() {
         );
     }
 
-    fs::remove_dir_all(&out_dir).unwrap();
+    fs::remove_dir_all(&out_dir)
+        .or_else(|e| match e.kind() {
+            io::ErrorKind::NotFound => Ok(()),
+            e => Err(e),
+        })
+        .unwrap();
     let mut task_counts = BTreeMap::new();
     for job in jobs.iter() {
         for artifact_name in &artifact_names {
