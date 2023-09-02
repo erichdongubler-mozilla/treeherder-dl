@@ -6,6 +6,7 @@ use std::{
 };
 
 use clap::Parser;
+use indicatif::ProgressIterator;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
@@ -237,7 +238,7 @@ async fn main() {
         })
         .unwrap();
     let mut task_counts = BTreeMap::new();
-    for job in jobs.iter() {
+    for job in jobs.iter().progress() {
         for artifact_name in &artifact_names {
             let Job {
                 job_group_symbol,
