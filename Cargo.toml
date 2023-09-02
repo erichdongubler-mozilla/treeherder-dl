@@ -3,6 +3,7 @@ name = "treeherder-dl"
 description = "Download artifacts in bulk from Mozilla's TreeHerder"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/ErichDonGubler/treeherder-dl"
 
 [package.metadata.binstall]
