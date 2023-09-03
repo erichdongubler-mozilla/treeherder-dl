@@ -3,10 +3,13 @@ use std::{
     fs, io,
     path::PathBuf,
     process::exit,
+    sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use clap::Parser;
-use indicatif::ProgressIterator;
+use futures::stream::StreamExt;
+use indicatif::ProgressBar;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
@@ -231,59 +234,77 @@ async fn main() {
         );
     }
 
+    let progress_bar = ProgressBar::new(
+        jobs.len()
+            .try_into()
+            .expect("number of jobs exceeds `u64::MAX` (!?)"),
+    );
+    progress_bar.tick(); // Force the progress bar to show now, rather than waiting until first
+                         // completion of a download.
     fs::remove_dir_all(&out_dir)
         .or_else(|e| match e.kind() {
             io::ErrorKind::NotFound => Ok(()),
             e => Err(e),
         })
         .unwrap();
-    let mut task_counts = BTreeMap::new();
-    for job in jobs.iter().progress() {
-        for artifact_name in &artifact_names {
-            let Job {
-                job_group_symbol,
-                job_type_symbol,
-                platform,
-                task_id,
-                platform_option,
-                ..
-            } = job;
-            let artifact = client
-                .get(format!(
-                    "{taskcluster_host}/api/queue/v1/task/{task_id}/runs/0/artifacts/{artifact_name}",
-                ))
-                .send()
-                .await
-                .unwrap()
-                .bytes()
-                .await
-                .unwrap();
+    let task_counts = Arc::new(Mutex::new(BTreeMap::new()));
+    progress_bar
+        .wrap_stream(tokio_stream::iter(jobs.iter()))
+        .for_each_concurrent(1, {
+            let artifact_names = &artifact_names;
+            let client = &client;
+            let out_dir = &out_dir;
+            let task_counts = &task_counts;
 
-            let job_path =
-                format!("{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}");
+            move |job| async move {
+                for artifact_name in artifact_names {
+                    let Job {
+                        job_group_symbol,
+                        job_type_symbol,
+                        platform,
+                        task_id,
+                        platform_option,
+                        ..
+                    } = job;
+                    let url = format!(
+                        "{taskcluster_host}/api/queue/v1/task/{task_id}/runs/0/artifacts/\
+                        {artifact_name}"
+                    );
+                    let artifact = client.get(url).send().await.unwrap().bytes().await.unwrap();
 
-            let task_count = task_counts.entry(job_path.clone()).or_insert(0);
-            let this_task_idx = *task_count;
-            *task_count += 1;
+                    let job_path = format!(
+                        "{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}"
+                    );
 
-            let local_artifact_path = {
-                let mut path = out_dir.join(job_path);
-                path.push(&this_task_idx.to_string());
-                path.push(artifact_name);
-                path
-            };
+                    let this_task_idx;
+                    {
+                        let mut task_counts = task_counts.lock().unwrap();
+                        let task_count = task_counts.entry(job_path.clone()).or_insert(0);
+                        this_task_idx = *task_count;
+                        *task_count += 1;
+                    }
 
-            {
-                let parent_dir = local_artifact_path.parent().unwrap();
-                fs::create_dir_all(parent_dir)
-                    .unwrap_or_else(|e| panic!("failed to create `{}`: {e}", parent_dir.display()));
+                    let local_artifact_path = {
+                        let mut path = out_dir.join(job_path);
+                        path.push(&this_task_idx.to_string());
+                        path.push(artifact_name);
+                        path
+                    };
+
+                    {
+                        let parent_dir = local_artifact_path.parent().unwrap();
+                        fs::create_dir_all(parent_dir).unwrap_or_else(|e| {
+                            panic!("failed to create `{}`: {e}", parent_dir.display())
+                        });
+                    }
+                    fs::write(&local_artifact_path, artifact).unwrap_or_else(|e| {
+                        panic!(
+                            "failed to write artifact `{}`: {e}",
+                            local_artifact_path.display()
+                        )
+                    });
+                }
             }
-            fs::write(&local_artifact_path, artifact).unwrap_or_else(|e| {
-                panic!(
-                    "failed to write artifact `{}`: {e}",
-                    local_artifact_path.display()
-                )
-            });
-        }
-    }
+        })
+        .await;
 }
