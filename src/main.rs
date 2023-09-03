@@ -1,10 +1,10 @@
 use std::{
     collections::{BTreeMap, HashSet},
     fs, io,
+    num::NonZeroU8,
     path::PathBuf,
     process::exit,
     sync::{Arc, Mutex},
-    time::Duration,
 };
 
 use clap::Parser;
@@ -136,6 +136,8 @@ struct Cli {
     job_type_name_regex: Option<Regex>,
     #[clap(long = "artifact")]
     artifact_names: Vec<String>,
+    #[clap(long = "max-parallel", default_value = "10")]
+    max_parallel_artifact_downloads: NonZeroU8,
 }
 
 #[tokio::main]
@@ -147,6 +149,7 @@ async fn main() {
         revision,
         job_type_name_regex,
         artifact_names,
+        max_parallel_artifact_downloads,
     } = Cli::parse();
 
     let client = reqwest::Client::new();
@@ -250,7 +253,7 @@ async fn main() {
     let task_counts = Arc::new(Mutex::new(BTreeMap::new()));
     progress_bar
         .wrap_stream(tokio_stream::iter(jobs.iter()))
-        .for_each_concurrent(1, {
+        .for_each_concurrent(usize::from(max_parallel_artifact_downloads.get()), {
             let artifact_names = &artifact_names;
             let client = &client;
             let out_dir = &out_dir;
