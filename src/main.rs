@@ -138,6 +138,8 @@ struct Cli {
     artifact_names: Vec<String>,
     #[clap(long = "max-parallel", default_value = "10")]
     max_parallel_artifact_downloads: NonZeroU8,
+    #[clap(long = "project", default_value = "try")]
+    project_name: String,
 }
 
 #[tokio::main]
@@ -150,6 +152,7 @@ async fn main() {
         job_type_name_regex,
         artifact_names,
         max_parallel_artifact_downloads,
+        project_name,
     } = Cli::parse();
 
     let client = reqwest::Client::new();
@@ -159,7 +162,7 @@ async fn main() {
 
     let revision = client
         .get(format!(
-            "{treeherder_host}/api/project/try/push/?revision={revision}"
+            "{treeherder_host}/api/project/{project_name}/push/?revision={revision}"
         ))
         .send()
         .await
