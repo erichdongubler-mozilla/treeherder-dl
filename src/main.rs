@@ -11,7 +11,7 @@ use clap::Parser;
 use futures::stream::StreamExt;
 use indicatif::ProgressBar;
 use regex::Regex;
-use reqwest::Url;
+use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -272,6 +272,7 @@ async fn main() {
                     let Job {
                         job_group_symbol,
                         job_type_symbol,
+                        job_type_name,
                         platform,
                         task_id,
                         platform_option,
@@ -281,7 +282,9 @@ async fn main() {
                         "{taskcluster_host}api/queue/v1/task/{task_id}/runs/0/artifacts/\
                         {artifact_name}"
                     );
-                    let artifact = client.get(url).send().await.unwrap().bytes().await.unwrap();
+
+                    let request = client.get(url);
+                    log::debug!("sending request {request:?}");
 
                     let job_path = format!(
                         "{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}"
@@ -294,6 +297,20 @@ async fn main() {
                         this_task_idx = *task_count;
                         *task_count += 1;
                     }
+
+                    let response = request.send().await.unwrap();
+                    {
+                        let code = response.status();
+                        if code != StatusCode::OK {
+                            log::error!(
+                                "got unexpected response {code} with request for task \
+                                {task_id:?} ({job_type_name:?}, index {this_task_idx}), \
+                                artifact {artifact_name:?}; skipping download",
+                            );
+                            continue;
+                        }
+                    }
+                    let artifact = response.bytes().await.unwrap();
 
                     let local_artifact_path = {
                         let mut path = out_dir.join(job_path);
