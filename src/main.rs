@@ -11,6 +11,7 @@ use clap::Parser;
 use futures::stream::StreamExt;
 use indicatif::ProgressBar;
 use regex::Regex;
+use reqwest::Url;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -140,6 +141,8 @@ struct Cli {
     max_parallel_artifact_downloads: NonZeroU8,
     #[clap(long = "project", default_value = "try")]
     project_name: String,
+    #[clap(long, default_value = "https://treeherder.mozilla.org")]
+    treeherder_host: Url,
 }
 
 #[tokio::main]
@@ -153,16 +156,16 @@ async fn main() {
         artifact_names,
         max_parallel_artifact_downloads,
         project_name,
+        treeherder_host,
     } = Cli::parse();
 
     let client = reqwest::Client::new();
 
-    let treeherder_host = "https://treeherder.mozilla.org";
     let taskcluster_host = "https://firefox-ci-tc.services.mozilla.com";
 
     let revision = client
         .get(format!(
-            "{treeherder_host}/api/project/{project_name}/push/?revision={revision}"
+            "{treeherder_host}api/project/{project_name}/push/?revision={revision}"
         ))
         .send()
         .await
@@ -185,7 +188,7 @@ async fn main() {
     let RevisionResult { id: push_id } = results.pop().unwrap();
 
     let Jobs(mut jobs) = client
-        .get(format!("{treeherder_host}/api/jobs/?push_id={push_id}"))
+        .get(format!("{treeherder_host}api/jobs/?push_id={push_id}"))
         .send()
         .await
         .unwrap()
