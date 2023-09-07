@@ -129,6 +129,14 @@ struct Job {
 
 #[derive(Debug, Parser)]
 struct Cli {
+    #[clap(long)]
+    out_dir: PathBuf,
+    #[clap(long = "artifact")]
+    artifact_names: Vec<String>,
+    #[clap(long = "max-parallel", default_value = "10")]
+    max_parallel_artifact_downloads: NonZeroU8,
+    #[clap(long, default_value = "https://firefox-ci-tc.services.mozilla.com")]
+    taskcluster_host: Url,
     #[clap(subcommand)]
     push_spec: PushSpec,
 }
@@ -141,38 +149,32 @@ enum PushSpec {
 #[derive(Debug, Parser)]
 struct FromOpts {
     #[clap(long)]
-    out_dir: PathBuf,
-    #[clap(long)]
     revision: String,
     #[clap(long = "job-type-re")]
     job_type_name_regex: Option<Regex>,
-    #[clap(long = "artifact")]
-    artifact_names: Vec<String>,
-    #[clap(long = "max-parallel", default_value = "10")]
-    max_parallel_artifact_downloads: NonZeroU8,
     #[clap(long = "project", default_value = "try")]
     project_name: String,
     #[clap(long, default_value = "https://treeherder.mozilla.org")]
     treeherder_host: Url,
-    #[clap(long, default_value = "https://firefox-ci-tc.services.mozilla.com")]
-    taskcluster_host: Url,
 }
 
 #[tokio::main]
 async fn main() {
     env_logger::init();
 
-    let Cli { push_spec } = Cli::parse();
-
-    let FromOpts {
+    let Cli {
+        push_spec,
         out_dir,
-        revision,
-        job_type_name_regex,
         artifact_names,
         max_parallel_artifact_downloads,
+        taskcluster_host,
+    } = Cli::parse();
+
+    let FromOpts {
+        revision,
+        job_type_name_regex,
         project_name,
         treeherder_host,
-        taskcluster_host,
     } = match push_spec {
         PushSpec::FromOpts(opts) => opts,
     };
