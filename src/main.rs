@@ -11,6 +11,7 @@ use clap::Parser;
 use futures::stream::StreamExt;
 use indicatif::ProgressBar;
 use regex::Regex;
+use reqwest::Url;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -140,6 +141,10 @@ struct Cli {
     max_parallel_artifact_downloads: NonZeroU8,
     #[clap(long = "project", default_value = "try")]
     project_name: String,
+    #[clap(long, default_value = "https://treeherder.mozilla.org")]
+    treeherder_host: Url,
+    #[clap(long, default_value = "https://firefox-ci-tc.services.mozilla.com")]
+    taskcluster_host: Url,
 }
 
 #[tokio::main]
@@ -153,16 +158,15 @@ async fn main() {
         artifact_names,
         max_parallel_artifact_downloads,
         project_name,
+        treeherder_host,
+        taskcluster_host,
     } = Cli::parse();
 
     let client = reqwest::Client::new();
 
-    let treeherder_host = "https://treeherder.mozilla.org";
-    let taskcluster_host = "https://firefox-ci-tc.services.mozilla.com";
-
     let revision = client
         .get(format!(
-            "{treeherder_host}/api/project/{project_name}/push/?revision={revision}"
+            "{treeherder_host}api/project/{project_name}/push/?revision={revision}"
         ))
         .send()
         .await
@@ -185,7 +189,7 @@ async fn main() {
     let RevisionResult { id: push_id } = results.pop().unwrap();
 
     let Jobs(mut jobs) = client
-        .get(format!("{treeherder_host}/api/jobs/?push_id={push_id}"))
+        .get(format!("{treeherder_host}api/jobs/?push_id={push_id}"))
         .send()
         .await
         .unwrap()
@@ -261,6 +265,7 @@ async fn main() {
             let client = &client;
             let out_dir = &out_dir;
             let task_counts = &task_counts;
+            let taskcluster_host = &taskcluster_host;
 
             move |job| async move {
                 for artifact_name in artifact_names {
@@ -273,7 +278,7 @@ async fn main() {
                         ..
                     } = job;
                     let url = format!(
-                        "{taskcluster_host}/api/queue/v1/task/{task_id}/runs/0/artifacts/\
+                        "{taskcluster_host}api/queue/v1/task/{task_id}/runs/0/artifacts/\
                         {artifact_name}"
                     );
                     let artifact = client.get(url).send().await.unwrap().bytes().await.unwrap();
