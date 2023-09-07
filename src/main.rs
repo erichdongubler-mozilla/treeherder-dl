@@ -143,6 +143,8 @@ struct Cli {
     project_name: String,
     #[clap(long, default_value = "https://treeherder.mozilla.org")]
     treeherder_host: Url,
+    #[clap(long, default_value = "https://firefox-ci-tc.services.mozilla.com")]
+    taskcluster_host: Url,
 }
 
 #[tokio::main]
@@ -157,11 +159,10 @@ async fn main() {
         max_parallel_artifact_downloads,
         project_name,
         treeherder_host,
+        taskcluster_host,
     } = Cli::parse();
 
     let client = reqwest::Client::new();
-
-    let taskcluster_host = "https://firefox-ci-tc.services.mozilla.com";
 
     let revision = client
         .get(format!(
@@ -264,6 +265,7 @@ async fn main() {
             let client = &client;
             let out_dir = &out_dir;
             let task_counts = &task_counts;
+            let taskcluster_host = &taskcluster_host;
 
             move |job| async move {
                 for artifact_name in artifact_names {
@@ -276,7 +278,7 @@ async fn main() {
                         ..
                     } = job;
                     let url = format!(
-                        "{taskcluster_host}/api/queue/v1/task/{task_id}/runs/0/artifacts/\
+                        "{taskcluster_host}api/queue/v1/task/{task_id}/runs/0/artifacts/\
                         {artifact_name}"
                     );
                     let artifact = client.get(url).send().await.unwrap().bytes().await.unwrap();
