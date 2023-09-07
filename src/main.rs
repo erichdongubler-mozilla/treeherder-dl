@@ -11,7 +11,7 @@ use clap::Parser;
 use futures::stream::StreamExt;
 use indicatif::ProgressBar;
 use regex::Regex;
-use reqwest::{StatusCode, Url};
+use reqwest::{Client, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -162,7 +162,7 @@ async fn main() {
         taskcluster_host,
     } = Cli::parse();
 
-    let client = reqwest::Client::new();
+    let client = Client::new();
 
     let revision = client
         .get(format!(
