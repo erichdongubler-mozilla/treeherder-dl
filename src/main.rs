@@ -129,6 +129,17 @@ struct Job {
 
 #[derive(Debug, Parser)]
 struct Cli {
+    #[clap(subcommand)]
+    push_spec: PushSpec,
+}
+
+#[derive(Debug, Parser)]
+enum PushSpec {
+    FromOpts(FromOpts),
+}
+
+#[derive(Debug, Parser)]
+struct FromOpts {
     #[clap(long)]
     out_dir: PathBuf,
     #[clap(long)]
@@ -151,7 +162,9 @@ struct Cli {
 async fn main() {
     env_logger::init();
 
-    let Cli {
+    let Cli { push_spec } = Cli::parse();
+
+    let FromOpts {
         out_dir,
         revision,
         job_type_name_regex,
@@ -160,7 +173,9 @@ async fn main() {
         project_name,
         treeherder_host,
         taskcluster_host,
-    } = Cli::parse();
+    } = match push_spec {
+        PushSpec::FromOpts(opts) => opts,
+    };
 
     let client = reqwest::Client::new();
 
