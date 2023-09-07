@@ -287,7 +287,7 @@ async fn main() {
                         "{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}"
                     );
 
-                    let this_task_idx;
+                    let this_task_idx: u32;
                     {
                         let mut task_counts = task_counts.lock().unwrap();
                         let task_count = task_counts.entry(job_path.clone()).or_insert(0);
