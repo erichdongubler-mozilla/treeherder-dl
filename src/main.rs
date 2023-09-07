@@ -158,6 +158,23 @@ struct FromOpts {
     treeherder_host: Url,
 }
 
+#[derive(Debug)]
+struct DownloadOperationConfig {
+    out_dir: PathBuf,
+    revision: String,
+    job_type_name_matcher: Option<Matcher>,
+    artifact_names: Vec<String>,
+    max_parallel_artifact_downloads: NonZeroU8,
+    project_name: String,
+    treeherder_host: Url,
+    taskcluster_host: Url,
+}
+
+#[derive(Debug)]
+enum Matcher {
+    Regex(Regex),
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
@@ -170,13 +187,34 @@ async fn main() {
         taskcluster_host,
     } = Cli::parse();
 
-    let FromOpts {
+    let DownloadOperationConfig {
         revision,
-        job_type_name_regex,
+        job_type_name_matcher,
+        artifact_names,
+        max_parallel_artifact_downloads,
+        out_dir,
         project_name,
+        taskcluster_host,
         treeherder_host,
     } = match push_spec {
-        PushSpec::FromOpts(opts) => opts,
+        PushSpec::FromOpts(opts) => {
+            let FromOpts {
+                revision,
+                job_type_name_regex,
+                project_name,
+                treeherder_host,
+            } = opts;
+            DownloadOperationConfig {
+                out_dir,
+                artifact_names,
+                max_parallel_artifact_downloads,
+                taskcluster_host,
+                revision,
+                job_type_name_matcher: job_type_name_regex.map(Matcher::Regex),
+                project_name,
+                treeherder_host,
+            }
+        }
     };
 
     let client = reqwest::Client::new();
@@ -227,8 +265,11 @@ async fn main() {
         }
         is_complete
     });
-    if let Some(job_type_name_regex) = job_type_name_regex {
-        jobs.retain(|job| job_type_name_regex.is_match(&job.job_type_name));
+    if let Some(job_type_name_matcher) = job_type_name_matcher {
+        let matching_jobs: Box<dyn Fn(&Job) -> _> = match job_type_name_matcher {
+            Matcher::Regex(re) => Box::new(move |job| re.is_match(&job.job_type_name)),
+        };
+        jobs.retain(matching_jobs);
     }
 
     if jobs.is_empty() {
