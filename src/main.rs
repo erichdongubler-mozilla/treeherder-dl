@@ -21,10 +21,12 @@ struct Revision {
     meta: RevisionMeta,
     results: Vec<RevisionResult>,
 }
+
 #[derive(Debug, Deserialize)]
 struct RevisionMeta {
     count: u32,
 }
+
 #[derive(Debug, Deserialize)]
 struct RevisionResult {
     id: u32,
