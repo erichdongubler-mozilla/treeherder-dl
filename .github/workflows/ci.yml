@@ -17,6 +17,7 @@ jobs:
           override: true
           profile: minimal
           toolchain: stable
+      - uses: Swatinem/rust-cache@v2
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
@@ -58,6 +59,7 @@ jobs:
           override: true
           profile: minimal
           toolchain: ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
       - uses: actions-rs/cargo@v1
         with:
           command: test
