@@ -1164,6 +1164,7 @@ dependencies = [
 name = "treeherder-dl"
 version = "0.4.0"
 dependencies = [
+ "bytes",
  "clap",
  "env_logger",
  "futures",

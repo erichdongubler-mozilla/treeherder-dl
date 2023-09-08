@@ -7,6 +7,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use bytes::Bytes;
 use clap::Parser;
 use futures::stream::StreamExt;
 use indicatif::ProgressBar;
@@ -278,13 +279,6 @@ async fn main() {
                         platform_option,
                         ..
                     } = job;
-                    let url = format!(
-                        "{taskcluster_host}api/queue/v1/task/{task_id}/runs/0/artifacts/\
-                        {artifact_name}"
-                    );
-
-                    let request = client.get(url);
-                    log::debug!("sending request {request:?}");
 
                     let job_path = format!(
                         "{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}"
@@ -298,10 +292,16 @@ async fn main() {
                         *task_count += 1;
                     }
 
-                    let response = request.send().await.unwrap();
+                    let artifact = match get_artifact(
+                        client,
+                        taskcluster_host,
+                        task_id,
+                        artifact_name,
+                    )
+                    .await
                     {
-                        let code = response.status();
-                        if code != StatusCode::OK {
+                        Ok(bytes) => bytes,
+                        Err(code) => {
                             log::error!(
                                 "got unexpected response {code} with request for task \
                                 {task_id:?} ({job_type_name:?}, index {this_task_idx}), \
@@ -309,8 +309,7 @@ async fn main() {
                             );
                             continue;
                         }
-                    }
-                    let artifact = response.bytes().await.unwrap();
+                    };
 
                     let local_artifact_path = {
                         let mut path = out_dir.join(job_path);
@@ -335,4 +334,27 @@ async fn main() {
             }
         })
         .await;
+}
+
+async fn get_artifact(
+    client: &Client,
+    taskcluster_host: &Url,
+    task_id: &String,
+    artifact_name: &str,
+) -> Result<Bytes, StatusCode> {
+    let url =
+        format!("{taskcluster_host}api/queue/v1/task/{task_id}/runs/0/artifacts/{artifact_name}");
+
+    let request = client.get(url);
+    log::debug!("sending request {request:?}");
+
+    let response = request.send().await.unwrap();
+    {
+        let code = response.status();
+        if code == StatusCode::OK {
+            Ok(response.bytes().await.unwrap())
+        } else {
+            Err(code)
+        }
+    }
 }
