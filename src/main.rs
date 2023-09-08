@@ -258,17 +258,20 @@ async fn main() {
             e => Err(e),
         })
         .unwrap();
+
     let task_counts = Arc::new(Mutex::new(BTreeMap::new()));
+    let max_parallel_artifact_downloads = usize::from(max_parallel_artifact_downloads.get());
+    let jobs = tokio_stream::iter(jobs.iter());
     progress_bar
-        .wrap_stream(tokio_stream::iter(jobs.iter()))
-        .for_each_concurrent(usize::from(max_parallel_artifact_downloads.get()), {
+        .wrap_stream(jobs)
+        .for_each_concurrent(max_parallel_artifact_downloads, |job| {
             let artifact_names = &artifact_names;
             let client = &client;
             let out_dir = &out_dir;
             let task_counts = &task_counts;
             let taskcluster_host = &taskcluster_host;
-
-            move |job| async move {
+            let progress_bar = progress_bar.clone();
+            async move {
                 for artifact_name in artifact_names {
                     let Job {
                         job_group_symbol,
@@ -302,11 +305,13 @@ async fn main() {
                     {
                         Ok(bytes) => bytes,
                         Err(code) => {
-                            log::error!(
-                                "got unexpected response {code} with request for task \
-                                {task_id:?} ({job_type_name:?}, index {this_task_idx}), \
-                                artifact {artifact_name:?}; skipping download",
-                            );
+                            progress_bar.suspend(|| {
+                                log::error!(
+                                    "got unexpected response {code} with request for task \
+                                    {task_id:?} ({job_type_name:?}, index {this_task_idx}), \
+                                    artifact {artifact_name:?}; skipping download",
+                                );
+                            });
                             continue;
                         }
                     };
