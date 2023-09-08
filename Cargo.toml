@@ -10,6 +10,7 @@ rust-version = "1.70.0"
 [package.metadata.binstall]
 
 [dependencies]
+bytes = "1"
 clap = { version = "4.4.2", features = ["derive"] }
 env_logger = "0.10.0"
 futures = { version = "0.3.28", default-features = false, features = ["std"] }

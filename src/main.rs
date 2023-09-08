@@ -7,11 +7,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use bytes::Bytes;
 use clap::Parser;
 use futures::stream::StreamExt;
 use indicatif::ProgressBar;
 use regex::Regex;
-use reqwest::Url;
+use reqwest::{Client, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -20,10 +21,12 @@ struct Revision {
     meta: RevisionMeta,
     results: Vec<RevisionResult>,
 }
+
 #[derive(Debug, Deserialize)]
 struct RevisionMeta {
     count: u32,
 }
+
 #[derive(Debug, Deserialize)]
 struct RevisionResult {
     id: u32,
@@ -162,7 +165,7 @@ async fn main() {
         taskcluster_host,
     } = Cli::parse();
 
-    let client = reqwest::Client::new();
+    let client = Client::new();
 
     let revision = client
         .get(format!(
@@ -244,78 +247,119 @@ async fn main() {
         );
     }
 
-    let progress_bar = ProgressBar::new(
-        jobs.len()
-            .try_into()
-            .expect("number of jobs exceeds `u64::MAX` (!?)"),
-    );
+    let artifacts_len = u64::try_from(jobs.len())
+        .expect("number of jobs exceeds `u64::MAX` (!?)")
+        .checked_mul(
+            artifact_names
+                .len()
+                .try_into()
+                .expect("number of artifacts exceeds `u64::MAX` (!?)"),
+        )
+        .expect("number of job-artifact combos exceeds `u64::MAX` (!?)");
+    let artifacts = tokio_stream::iter(jobs.iter())
+        .flat_map(|job| tokio_stream::iter(artifact_names.iter().map(move |name| (job, name))));
+
+    let progress_bar = ProgressBar::new(artifacts_len);
     progress_bar.tick(); // Force the progress bar to show now, rather than waiting until first
                          // completion of a download.
+
     fs::remove_dir_all(&out_dir)
         .or_else(|e| match e.kind() {
             io::ErrorKind::NotFound => Ok(()),
             e => Err(e),
         })
         .unwrap();
+
     let task_counts = Arc::new(Mutex::new(BTreeMap::new()));
+    let max_parallel_artifact_downloads = usize::from(max_parallel_artifact_downloads.get());
     progress_bar
-        .wrap_stream(tokio_stream::iter(jobs.iter()))
-        .for_each_concurrent(usize::from(max_parallel_artifact_downloads.get()), {
-            let artifact_names = &artifact_names;
+        .wrap_stream(artifacts)
+        .for_each_concurrent(max_parallel_artifact_downloads, |(job, artifact_name)| {
             let client = &client;
             let out_dir = &out_dir;
             let task_counts = &task_counts;
             let taskcluster_host = &taskcluster_host;
+            let progress_bar = progress_bar.clone();
+            async move {
+                let Job {
+                    job_group_symbol,
+                    job_type_symbol,
+                    job_type_name,
+                    platform,
+                    task_id,
+                    platform_option,
+                    ..
+                } = job;
 
-            move |job| async move {
-                for artifact_name in artifact_names {
-                    let Job {
-                        job_group_symbol,
-                        job_type_symbol,
-                        platform,
-                        task_id,
-                        platform_option,
-                        ..
-                    } = job;
-                    let url = format!(
-                        "{taskcluster_host}api/queue/v1/task/{task_id}/runs/0/artifacts/\
-                        {artifact_name}"
-                    );
-                    let artifact = client.get(url).send().await.unwrap().bytes().await.unwrap();
+                let job_path =
+                    format!("{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}");
 
-                    let job_path = format!(
-                        "{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}"
-                    );
+                let this_task_idx: u32;
+                {
+                    let mut task_counts = task_counts.lock().unwrap();
+                    let task_count = task_counts.entry(job_path.clone()).or_insert(0);
+                    this_task_idx = *task_count;
+                    *task_count += 1;
+                }
 
-                    let this_task_idx;
-                    {
-                        let mut task_counts = task_counts.lock().unwrap();
-                        let task_count = task_counts.entry(job_path.clone()).or_insert(0);
-                        this_task_idx = *task_count;
-                        *task_count += 1;
-                    }
-
-                    let local_artifact_path = {
-                        let mut path = out_dir.join(job_path);
-                        path.push(&this_task_idx.to_string());
-                        path.push(artifact_name);
-                        path
+                let artifact =
+                    match get_artifact(client, taskcluster_host, task_id, artifact_name).await {
+                        Ok(bytes) => bytes,
+                        Err(code) => {
+                            progress_bar.suspend(|| {
+                                log::error!(
+                                    "got unexpected response {code} with request for task \
+                                    {task_id:?} ({job_type_name:?}, index {this_task_idx}), \
+                                    artifact {artifact_name:?}; skipping download",
+                                );
+                            });
+                            return;
+                        }
                     };
 
-                    {
-                        let parent_dir = local_artifact_path.parent().unwrap();
-                        fs::create_dir_all(parent_dir).unwrap_or_else(|e| {
-                            panic!("failed to create `{}`: {e}", parent_dir.display())
-                        });
-                    }
-                    fs::write(&local_artifact_path, artifact).unwrap_or_else(|e| {
-                        panic!(
-                            "failed to write artifact `{}`: {e}",
-                            local_artifact_path.display()
-                        )
+                let local_artifact_path = {
+                    let mut path = out_dir.join(job_path);
+                    path.push(&this_task_idx.to_string());
+                    path.push(artifact_name);
+                    path
+                };
+
+                {
+                    let parent_dir = local_artifact_path.parent().unwrap();
+                    fs::create_dir_all(parent_dir).unwrap_or_else(|e| {
+                        panic!("failed to create `{}`: {e}", parent_dir.display())
                     });
                 }
+                fs::write(&local_artifact_path, artifact).unwrap_or_else(|e| {
+                    panic!(
+                        "failed to write artifact `{}`: {e}",
+                        local_artifact_path.display()
+                    )
+                });
             }
         })
         .await;
+}
+
+async fn get_artifact(
+    client: &Client,
+    taskcluster_host: &Url,
+    task_id: &String,
+    artifact_name: &str,
+) -> Result<Bytes, StatusCode> {
+    let url =
+        format!("{taskcluster_host}api/queue/v1/task/{task_id}/runs/0/artifacts/{artifact_name}");
+
+    let request = client.get(url);
+    log::debug!("sending request {request:?}");
+
+    let response = request.send().await.unwrap();
+    {
+        let code = response.status();
+        if code == StatusCode::OK {
+            Ok(response.bytes().await.unwrap())
+        } else {
+            Err(code)
+        }
+    }
 }
