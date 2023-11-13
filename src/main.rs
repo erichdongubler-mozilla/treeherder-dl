@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, HashSet},
-    fs, io,
+    fs,
     num::NonZeroU8,
     path::PathBuf,
     process::exit,
@@ -263,13 +263,6 @@ async fn main() {
     progress_bar.tick(); // Force the progress bar to show now, rather than waiting until first
                          // completion of a download.
 
-    fs::remove_dir_all(&out_dir)
-        .or_else(|e| match e.kind() {
-            io::ErrorKind::NotFound => Ok(()),
-            e => Err(e),
-        })
-        .unwrap();
-
     let task_counts = Arc::new(Mutex::new(BTreeMap::new()));
     let max_parallel_artifact_downloads = usize::from(max_parallel_artifact_downloads.get());
     progress_bar
@@ -302,6 +295,23 @@ async fn main() {
                     *task_count += 1;
                 }
 
+                let local_artifact_path = {
+                    let mut path = out_dir.join(job_path);
+                    path.push(&this_task_idx.to_string());
+                    path.push(artifact_name);
+                    path
+                };
+
+                if local_artifact_path.is_file() {
+                    progress_bar.suspend(|| {
+                        log::info!(
+                            "skipping file that already appears to be downloaded: {}",
+                            local_artifact_path.display()
+                        );
+                    });
+                    return;
+                }
+
                 let artifact =
                     match get_artifact(client, taskcluster_host, task_id, artifact_name).await {
                         Ok(bytes) => bytes,
@@ -316,13 +326,6 @@ async fn main() {
                             return;
                         }
                     };
-
-                let local_artifact_path = {
-                    let mut path = out_dir.join(job_path);
-                    path.push(&this_task_idx.to_string());
-                    path.push(artifact_name);
-                    path
-                };
 
                 {
                     let parent_dir = local_artifact_path.parent().unwrap();
