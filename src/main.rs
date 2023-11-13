@@ -181,21 +181,24 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
         taskcluster_host,
     } = options;
 
-    let revision = client
-        .get(format!(
-            "{treeherder_host}api/project/{project_name}/push/?revision={revision}"
-        ))
-        .send()
-        .await
-        .unwrap()
-        .json::<Revision>()
-        .await
-        .unwrap();
+    let Revision {
+        meta: RevisionMeta { count },
+        mut results,
+    } = {
+        let revision = client
+            .get(format!(
+                "{treeherder_host}api/project/{project_name}/push/?revision={revision}"
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json::<Revision>()
+            .await
+            .unwrap();
+        log::info!("fetching for revision(s): {:?}", [&revision]);
+        revision
+    };
 
-    log::info!("fetching for revision(s): {:?}", [&revision]);
-
-    let Revision { meta, mut results } = revision;
-    let RevisionMeta { count } = meta;
     assert!(results.len() == usize::try_from(count).unwrap());
     if count > 1 {
         log::warn!("more than one `result` found for specified push");
