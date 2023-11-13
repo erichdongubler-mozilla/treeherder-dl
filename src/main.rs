@@ -132,10 +132,16 @@ struct Job {
 
 #[derive(Debug, Parser)]
 struct Cli {
-    #[clap(long)]
-    out_dir: PathBuf,
+    #[clap(flatten)]
+    options: Options,
     #[clap(long)]
     revision: String,
+}
+
+#[derive(Debug, Parser)]
+struct Options {
+    #[clap(long)]
+    out_dir: PathBuf,
     #[clap(long = "job-type-re")]
     job_type_name_regex: Option<Regex>,
     #[clap(long = "artifact")]
@@ -157,18 +163,23 @@ async fn main() {
         .parse_default_env()
         .init();
 
-    let Cli {
+    let Cli { options, revision } = Cli::parse();
+
+    let client = Client::new();
+
+    get_artifacts_for_revision(&client, &options, &revision).await
+}
+
+async fn get_artifacts_for_revision(client: &Client, options: &Options, revision: &str) {
+    let Options {
         out_dir,
-        revision,
         job_type_name_regex,
         artifact_names,
         max_parallel_artifact_downloads,
         project_name,
         treeherder_host,
         taskcluster_host,
-    } = Cli::parse();
-
-    let client = Client::new();
+    } = options;
 
     let revision = client
         .get(format!(
