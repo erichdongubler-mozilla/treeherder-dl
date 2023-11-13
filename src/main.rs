@@ -4,6 +4,7 @@ use std::{
     num::NonZeroU8,
     path::PathBuf,
     process::exit,
+    str::FromStr,
     sync::{Arc, Mutex},
 };
 
@@ -134,8 +135,8 @@ struct Job {
 struct Cli {
     #[clap(flatten)]
     options: Options,
-    #[clap(long)]
-    revision: String,
+    #[clap(value_parser = RevisionRef::from_str)]
+    revisions: Vec<RevisionRef>,
 }
 
 #[derive(Debug, Parser)]
@@ -148,12 +149,31 @@ struct Options {
     artifact_names: Vec<String>,
     #[clap(long = "max-parallel", default_value = "10")]
     max_parallel_artifact_downloads: NonZeroU8,
-    #[clap(long = "project", default_value = "try")]
-    project_name: String,
     #[clap(long, default_value = "https://treeherder.mozilla.org")]
     treeherder_host: Url,
     #[clap(long, default_value = "https://firefox-ci-tc.services.mozilla.com")]
     taskcluster_host: Url,
+}
+
+#[derive(Clone, Debug)]
+struct RevisionRef {
+    project: String,
+    hash: String,
+}
+
+impl FromStr for RevisionRef {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.split_once(':')
+            .map(|(project, hash)| Self {
+                project: project.to_owned(),
+                hash: hash.to_owned(),
+            })
+            .ok_or_else(|| {
+                "no dividing colon found; expected revision ref. of the form <project>:<hash>"
+            })
+    }
 }
 
 #[tokio::main]
@@ -163,23 +183,28 @@ async fn main() {
         .parse_default_env()
         .init();
 
-    let Cli { options, revision } = Cli::parse();
+    let Cli { options, revisions } = Cli::parse();
 
     let client = Client::new();
 
-    get_artifacts_for_revision(&client, &options, &revision).await
+    for rev_ref in revisions {
+        get_artifacts_for_revision(&client, &options, &rev_ref).await
+    }
 }
 
-async fn get_artifacts_for_revision(client: &Client, options: &Options, revision: &str) {
+async fn get_artifacts_for_revision(client: &Client, options: &Options, revision: &RevisionRef) {
     let Options {
         out_dir,
         job_type_name_regex,
         artifact_names,
         max_parallel_artifact_downloads,
-        project_name,
         treeherder_host,
         taskcluster_host,
     } = options;
+    let RevisionRef {
+        project: project_name,
+        hash: revision,
+    } = revision;
 
     let Revision {
         meta: RevisionMeta { count },
@@ -298,8 +323,9 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                 ..
             } = job;
 
-            let job_path =
-                format!("{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}");
+            let job_path = format!(
+                "{revision}/{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}"
+            );
 
             let this_task_idx: u32;
             {
