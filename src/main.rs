@@ -267,82 +267,83 @@ async fn main() {
                          // completion of a download.
 
     let task_counts = Arc::new(Mutex::new(BTreeMap::new()));
-    let max_parallel_artifact_downloads = usize::from(max_parallel_artifact_downloads.get());
-    progress_bar
-        .wrap_stream(artifacts)
-        .for_each_concurrent(max_parallel_artifact_downloads, |(job, artifact_name)| {
-            let client = &client;
-            let out_dir = &out_dir;
-            let task_counts = &task_counts;
-            let taskcluster_host = &taskcluster_host;
-            let progress_bar = progress_bar.clone();
-            async move {
-                let Job {
-                    job_group_symbol,
-                    job_type_symbol,
-                    job_type_name,
-                    platform,
-                    task_id,
-                    platform_option,
-                    ..
-                } = job;
+    let artifacts = artifacts.then(|(job, artifact_name)| {
+        let client = &client;
+        let out_dir = &out_dir;
+        let task_counts = &task_counts;
+        let taskcluster_host = &taskcluster_host;
+        let progress_bar = progress_bar.clone();
+        async move {
+            let Job {
+                job_group_symbol,
+                job_type_symbol,
+                job_type_name,
+                platform,
+                task_id,
+                platform_option,
+                ..
+            } = job;
 
-                let job_path =
-                    format!("{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}");
+            let job_path =
+                format!("{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}");
 
-                let this_task_idx: u32;
-                {
-                    let mut task_counts = task_counts.lock().unwrap();
-                    let task_count = task_counts.entry(job_path.clone()).or_insert(0);
-                    this_task_idx = *task_count;
-                    *task_count += 1;
-                }
+            let this_task_idx: u32;
+            {
+                let mut task_counts = task_counts.lock().unwrap();
+                let task_count = task_counts.entry(job_path.clone()).or_insert(0);
+                this_task_idx = *task_count;
+                *task_count += 1;
+            }
 
-                let local_artifact_path = {
-                    let mut path = out_dir.join(job_path);
-                    path.push(&this_task_idx.to_string());
-                    path.push(artifact_name);
-                    path
-                };
+            let local_artifact_path = {
+                let mut path = out_dir.join(job_path);
+                path.push(&this_task_idx.to_string());
+                path.push(artifact_name);
+                path
+            };
 
-                if local_artifact_path.is_file() {
-                    progress_bar.suspend(|| {
-                        log::info!(
-                            "skipping file that already appears to be downloaded: {}",
-                            local_artifact_path.display()
-                        );
-                    });
-                    return;
-                }
+            if local_artifact_path.is_file() {
+                progress_bar.suspend(|| {
+                    log::info!(
+                        "skipping file that already appears to be downloaded: {}",
+                        local_artifact_path.display()
+                    );
+                });
+                return;
+            }
 
-                let artifact =
-                    match get_artifact(client, taskcluster_host, task_id, artifact_name).await {
-                        Ok(bytes) => bytes,
-                        Err(code) => {
-                            progress_bar.suspend(|| {
-                                log::error!(
-                                    "got unexpected response {code} with request for task \
+            let artifact =
+                match get_artifact(client, taskcluster_host, task_id, artifact_name).await {
+                    Ok(bytes) => bytes,
+                    Err(code) => {
+                        progress_bar.suspend(|| {
+                            log::error!(
+                                "got unexpected response {code} with request for task \
                                     {task_id:?} ({job_type_name:?}, index {this_task_idx}), \
                                     artifact {artifact_name:?}; skipping download",
-                                );
-                            });
-                            return;
-                        }
-                    };
+                            );
+                        });
+                        return;
+                    }
+                };
 
-                {
-                    let parent_dir = local_artifact_path.parent().unwrap();
-                    fs::create_dir_all(parent_dir).unwrap_or_else(|e| {
-                        panic!("failed to create `{}`: {e}", parent_dir.display())
-                    });
-                }
-                fs::write(&local_artifact_path, artifact).unwrap_or_else(|e| {
-                    panic!(
-                        "failed to write artifact `{}`: {e}",
-                        local_artifact_path.display()
-                    )
-                });
+            {
+                let parent_dir = local_artifact_path.parent().unwrap();
+                fs::create_dir_all(parent_dir)
+                    .unwrap_or_else(|e| panic!("failed to create `{}`: {e}", parent_dir.display()));
             }
+            fs::write(&local_artifact_path, artifact).unwrap_or_else(|e| {
+                panic!(
+                    "failed to write artifact `{}`: {e}",
+                    local_artifact_path.display()
+                )
+            });
+        }
+    });
+    let max_parallel_artifact_downloads = usize::from(max_parallel_artifact_downloads.get());
+    artifacts
+        .for_each_concurrent(max_parallel_artifact_downloads, |()| async {
+            progress_bar.inc(1)
         })
         .await;
 }
