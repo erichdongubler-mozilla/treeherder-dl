@@ -21,11 +21,11 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-targets --all-features --locked
+          args: --all-targets --all-features --locked -- -D warnings
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-targets --all-features --locked --release
+          args: --all-targets --all-features --locked --release -- -D warnings
 
   cargo-fmt:
     runs-on: ubuntu-latest
