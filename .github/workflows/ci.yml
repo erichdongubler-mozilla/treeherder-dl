@@ -68,6 +68,7 @@ jobs:
         with:
           command: build
           args: --release --all-features --locked
+
   cargo-deny:
     runs-on: ubuntu-latest
     steps:
