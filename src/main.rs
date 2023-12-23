@@ -185,7 +185,7 @@ async fn main() {
 
     let Cli { options, revisions } = Cli::parse();
 
-    let client = Client::new();
+    let client = Client::builder().gzip(true).build().unwrap();
 
     for rev_ref in revisions {
         get_artifacts_for_revision(&client, &options, &rev_ref).await
