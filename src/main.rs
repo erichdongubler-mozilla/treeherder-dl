@@ -170,7 +170,7 @@ impl FromStr for RevisionRef {
                 project: project.to_owned(),
                 hash: hash.to_owned(),
             })
-            .ok_or_else(|| {
+            .ok_or({
                 "no dividing colon found; expected revision ref. of the form <project>:<hash>"
             })
     }
@@ -264,6 +264,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
 
     if log::log_enabled!(log::Level::Info) {
         // OPT: We might not need to do this with only `INFO` enabled.
+        #[allow(clippy::unwrap_or_default)]
         let summarized_job_tree = jobs.iter().fold(BTreeMap::new(), |mut acc, job| {
             acc.entry(job.platform.clone())
                 .or_insert_with(BTreeMap::new)
