@@ -170,7 +170,7 @@ impl FromStr for RevisionRef {
                 project: project.to_owned(),
                 hash: hash.to_owned(),
             })
-            .ok_or_else(|| {
+            .ok_or({
                 "no dividing colon found; expected revision ref. of the form <project>:<hash>"
             })
     }
