@@ -245,8 +245,9 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
     jobs.retain(|job| {
         let mut should_retain = true;
         let job_display = lazy_format!(
-            "job {} (`{}` on `{}` `{}`)",
+            "job {}, task {} (`{}` on `{}` `{}`)",
             job.id,
+            job.task_id,
             job.job_type_name,
             job.platform,
             job.platform_option
