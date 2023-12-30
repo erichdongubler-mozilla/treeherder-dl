@@ -10,6 +10,7 @@ use std::{
 
 use bytes::Bytes;
 use clap::Parser;
+use format::lazy_format;
 use futures::stream::StreamExt;
 use indicatif::ProgressBar;
 use regex::Regex;
@@ -242,15 +243,17 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
         .unwrap();
 
     jobs.retain(|job| {
+        let job_display = lazy_format!(
+            "job {} (`{}` on `{}` `{}`)",
+            job.id,
+            job.job_type_name,
+            job.platform,
+            job.platform_option
+        );
+
         let is_complete = job.state == "completed";
         if !is_complete {
-            log::warn!(
-                "skipping incomplete job {} (`{}` on `{}` `{}`)",
-                job.id,
-                job.job_type_name,
-                job.platform,
-                job.platform_option
-            );
+            log::warn!("skipping incomplete {job_display}");
         }
         is_complete
     });
