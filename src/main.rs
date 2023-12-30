@@ -356,7 +356,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
 
             if local_artifact_path.is_file() {
                 progress_bar.suspend(|| {
-                    log::info!(
+                    log::debug!(
                         "skipping file that already appears to be downloaded: {}",
                         local_artifact_path.display()
                     );
