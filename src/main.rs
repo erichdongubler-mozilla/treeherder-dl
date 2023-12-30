@@ -242,31 +242,6 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
         .await
         .unwrap();
 
-    jobs.retain(|job| {
-        let mut should_retain = true;
-        let job_display = lazy_format!(
-            "job {}, task {} (`{}` on `{}` `{}`)",
-            job.id,
-            job.task_id,
-            job.job_type_name,
-            job.platform,
-            job.platform_option
-        );
-
-        let is_complete = job.state == "completed";
-        if !is_complete {
-            log::warn!("skipping incomplete {job_display}");
-        }
-        should_retain &= is_complete;
-
-        let is_retry = job.result == "retry";
-        if is_retry {
-            log::debug!("skipping retry job {job_display}");
-        }
-        should_retain &= !is_retry;
-
-        should_retain
-    });
     if let Some(job_type_name_regex) = job_type_name_regex {
         jobs.retain(|job| job_type_name_regex.is_match(&job.job_type_name));
     }
@@ -346,6 +321,35 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                 let task_count = task_counts.entry(job_path.clone()).or_insert(0);
                 this_task_idx = *task_count;
                 *task_count += 1;
+            }
+
+            let job_display = lazy_format!(
+                "job {}, task {} (`{}` on `{}` `{}`)",
+                job.id,
+                job.task_id,
+                job.job_type_name,
+                job.platform,
+                job.platform_option
+            );
+
+            let is_complete = job.state == "completed";
+            if !is_complete {
+                if log::log_enabled!(log::Level::Warn) {
+                    progress_bar.suspend(|| {
+                        log::warn!("skipping incomplete {job_display}");
+                    });
+                }
+                return;
+            }
+
+            let is_retry = job.result == "retry";
+            if is_retry {
+                if log::log_enabled!(log::Level::Debug) {
+                    progress_bar.suspend(|| {
+                        log::debug!("skipping retry job {job_display}");
+                    });
+                }
+                return;
             }
 
             let local_artifact_path = {
