@@ -377,9 +377,13 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                     Err(code) => {
                         progress_bar.suspend(|| {
                             log::error!(
-                                "got unexpected response {code} with request for task \
-                                    {task_id:?} ({job_type_name:?}, index {this_task_idx}), \
-                                    artifact {artifact_name:?}; skipping download",
+                                concat!(
+                                    "got unexpected response {} with request for {}, ",
+                                    "artifact {:?}; skipping download"
+                                ),
+                                code,
+                                job_display,
+                                artifact_name
                             );
                         });
                         return;
