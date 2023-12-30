@@ -243,6 +243,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
         .unwrap();
 
     jobs.retain(|job| {
+        let mut should_retain = true;
         let job_display = lazy_format!(
             "job {} (`{}` on `{}` `{}`)",
             job.id,
@@ -255,7 +256,15 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
         if !is_complete {
             log::warn!("skipping incomplete {job_display}");
         }
-        is_complete
+        should_retain &= is_complete;
+
+        let is_retry = job.result == "retry";
+        if is_retry {
+            log::debug!("skipping retry job {job_display}");
+        }
+        should_retain &= !is_retry;
+
+        should_retain
     });
     if let Some(job_type_name_regex) = job_type_name_regex {
         jobs.retain(|job| job_type_name_regex.is_match(&job.job_type_name));
