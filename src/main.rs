@@ -308,6 +308,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                 platform,
                 task_id,
                 platform_option,
+                id,
                 ..
             } = job;
 
@@ -325,9 +326,9 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
 
             let job_display = lazy_format!(
                 "job {}, task {} (`{}` on `{}` `{}`)",
-                job.id,
-                job.task_id,
-                job.job_type_name,
+                id,
+                task_id,
+                job_type_name,
                 job.platform,
                 job.platform_option
             );
