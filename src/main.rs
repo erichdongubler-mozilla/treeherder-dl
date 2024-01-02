@@ -324,14 +324,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                 *task_count += 1;
             }
 
-            let job_display = lazy_format!(
-                "job {}, task {} (`{}` on `{}` `{}`)",
-                id,
-                task_id,
-                job_type_name,
-                job.platform,
-                job.platform_option
-            );
+            let job_display = lazy_format!("job {}, task {} (`{}`)", id, task_id, job_type_name);
 
             let is_complete = job.state == "completed";
             if !is_complete {
