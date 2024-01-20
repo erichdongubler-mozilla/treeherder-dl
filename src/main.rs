@@ -242,30 +242,6 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
         .await
         .unwrap();
 
-    jobs.retain(|job| {
-        let mut should_retain = true;
-        let job_display = lazy_format!(
-            "job {} (`{}` on `{}` `{}`)",
-            job.id,
-            job.job_type_name,
-            job.platform,
-            job.platform_option
-        );
-
-        let is_complete = job.state == "completed";
-        if !is_complete {
-            log::warn!("skipping incomplete {job_display}");
-        }
-        should_retain &= is_complete;
-
-        let is_retry = job.result == "retry";
-        if is_retry {
-            log::debug!("skipping retry job {job_display}");
-        }
-        should_retain &= !is_retry;
-
-        should_retain
-    });
     if let Some(job_type_name_regex) = job_type_name_regex {
         jobs.retain(|job| job_type_name_regex.is_match(&job.job_type_name));
     }
@@ -332,6 +308,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                 platform,
                 task_id,
                 platform_option,
+                id,
                 ..
             } = job;
 
@@ -347,6 +324,34 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                 *task_count += 1;
             }
 
+            let job_display = lazy_format!(
+                "job {}, task {} (`{}`, index {})",
+                id,
+                task_id,
+                job_type_name,
+                this_task_idx,
+            );
+
+            let is_complete = job.state == "completed";
+            if !is_complete {
+                if log::log_enabled!(log::Level::Warn) {
+                    progress_bar.suspend(|| {
+                        log::warn!("skipping incomplete {job_display}");
+                    });
+                }
+                return;
+            }
+
+            let is_retry = job.result == "retry";
+            if is_retry {
+                if log::log_enabled!(log::Level::Debug) {
+                    progress_bar.suspend(|| {
+                        log::debug!("skipping retry job {job_display}");
+                    });
+                }
+                return;
+            }
+
             let local_artifact_path = {
                 let mut path = out_dir.join(job_path);
                 path.push(&this_task_idx.to_string());
@@ -355,12 +360,14 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
             };
 
             if local_artifact_path.is_file() {
-                progress_bar.suspend(|| {
-                    log::info!(
-                        "skipping file that already appears to be downloaded: {}",
-                        local_artifact_path.display()
-                    );
-                });
+                if log::log_enabled!(log::Level::Debug) {
+                    progress_bar.suspend(|| {
+                        log::debug!(
+                            "skipping file that already appears to be downloaded: {}",
+                            local_artifact_path.display()
+                        );
+                    });
+                }
                 return;
             }
 
@@ -370,9 +377,13 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                     Err(code) => {
                         progress_bar.suspend(|| {
                             log::error!(
-                                "got unexpected response {code} with request for task \
-                                    {task_id:?} ({job_type_name:?}, index {this_task_idx}), \
-                                    artifact {artifact_name:?}; skipping download",
+                                concat!(
+                                    "got unexpected response {} with request for {}, ",
+                                    "artifact {:?}; skipping download"
+                                ),
+                                code,
+                                job_display,
+                                artifact_name
                             );
                         });
                         return;
