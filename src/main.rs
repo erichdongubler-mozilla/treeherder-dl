@@ -132,6 +132,7 @@ struct Job {
 }
 
 #[derive(Debug, Parser)]
+#[clap(about, version)]
 struct Cli {
     #[clap(flatten)]
     options: Options,
