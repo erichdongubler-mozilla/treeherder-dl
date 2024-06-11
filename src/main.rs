@@ -342,11 +342,14 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                 return;
             }
 
-            let is_retry = job.result == "retry";
-            if is_retry {
-                if log::log_enabled!(log::Level::Debug) {
+            let skip_log_level = match &*job.result {
+                "retry" => Some(log::Level::Debug),
+                _ => None,
+            };
+            if let Some(level) = skip_log_level {
+                if log::log_enabled!(level) {
                     progress_bar.suspend(|| {
-                        log::debug!("skipping retry job {job_display}");
+                        log::log!(level, "skipping `{}` job {job_display}", job.result);
                     });
                 }
                 return;
