@@ -349,7 +349,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
             if let Some(level) = skip_log_level {
                 if log::log_enabled!(level) {
                     progress_bar.suspend(|| {
-                        log::log!(level, "skipping `{}` job {job_display}", job.result);
+                        log::log!(level, "skipping `{}` {job_display}", job.result);
                     });
                 }
                 return;
