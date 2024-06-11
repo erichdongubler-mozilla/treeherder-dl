@@ -1,5 +1,5 @@
 [licenses]
-unlicensed = "deny"
+version = 2
 allow = [
 	"Apache-2.0 WITH LLVM-exception",
 	"Apache-2.0",
@@ -7,5 +7,3 @@ allow = [
 	"MIT",
 	"Unicode-DFS-2016",
 ]
-copyleft = "warn"
-allow-osi-fsf-free = "neither"
