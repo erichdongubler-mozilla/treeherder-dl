@@ -10,10 +10,10 @@ use std::{
 
 use bytes::Bytes;
 use clap::Parser;
-use format::lazy_format;
 use futures::stream::StreamExt;
 use indicatif::ProgressBar;
 use joinery::JoinableIterator as _;
+use lazy_format::lazy_format;
 use regex::Regex;
 use reqwest::{Client, StatusCode, Url};
 use serde::Deserialize;
