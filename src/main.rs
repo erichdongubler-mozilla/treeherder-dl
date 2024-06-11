@@ -343,9 +343,14 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
             }
 
             let skip_log_level = match &*job.result {
+                "success" | "testfailed" => {
+                    // We might have still hit a timeout, but we expect to still have some
+                    // artifacts available.
+                    None
+                }
                 "retry" | "usercancel" => Some(log::Level::Debug),
                 "exception" => Some(log::Level::Warn),
-                _ => None,
+                _ => Some(log::Level::Warn),
             };
             if let Some(level) = skip_log_level {
                 if log::log_enabled!(level) {
