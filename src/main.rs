@@ -344,6 +344,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
 
             let skip_log_level = match &*job.result {
                 "retry" | "usercancel" => Some(log::Level::Debug),
+                "exception" => Some(log::Level::Warn),
                 _ => None,
             };
             if let Some(level) = skip_log_level {
