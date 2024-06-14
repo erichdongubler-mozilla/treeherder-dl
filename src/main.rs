@@ -312,10 +312,6 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                 ..
             } = job;
 
-            let job_path = format!(
-                "{revision}/{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}"
-            );
-
             let this_run_idx: u32;
             {
                 let mut run_counts = run_counts.lock().unwrap();
@@ -361,6 +357,9 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                 return;
             }
 
+            let job_path = format!(
+                "{revision}/{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}"
+            );
             let local_artifact_path = {
                 let mut path = out_dir.join(job_path);
                 path.push(&this_run_idx.to_string());
