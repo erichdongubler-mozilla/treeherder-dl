@@ -365,6 +365,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                     platform_option,
                     job_group_symbol,
                     job_type_symbol,
+                    task_id,
                     &this_run_idx,
                     artifact_name,
                 ];
