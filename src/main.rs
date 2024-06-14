@@ -13,6 +13,7 @@ use clap::Parser;
 use format::lazy_format;
 use futures::stream::StreamExt;
 use indicatif::ProgressBar;
+use joinery::JoinableIterator as _;
 use regex::Regex;
 use reqwest::{Client, StatusCode, Url};
 use serde::Deserialize;
@@ -357,14 +358,17 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                 return;
             }
 
-            let job_path = format!(
-                "{revision}/{platform}/{platform_option}/{job_group_symbol}/{job_type_symbol}"
-            );
             let local_artifact_path = {
-                let mut path = out_dir.join(job_path);
-                path.push(&this_run_idx.to_string());
-                path.push(artifact_name);
-                path
+                let segments: &[&dyn std::fmt::Display] = &[
+                    revision,
+                    platform,
+                    platform_option,
+                    job_group_symbol,
+                    job_type_symbol,
+                    &this_run_idx,
+                    artifact_name,
+                ];
+                out_dir.join(segments.iter().join_with('/').to_string())
             };
 
             if local_artifact_path.is_file() {
