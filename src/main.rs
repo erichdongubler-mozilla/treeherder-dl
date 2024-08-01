@@ -434,7 +434,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
 async fn get_artifact(
     client: &Client,
     taskcluster_host: &Url,
-    task_id: &String,
+    task_id: &str,
     artifact_name: &str,
     run_idx: u32,
 ) -> Result<Bytes, StatusCode> {
