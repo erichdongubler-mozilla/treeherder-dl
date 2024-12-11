@@ -12,14 +12,14 @@ rust-version = "1.70.0"
 [dependencies]
 bytes = "1"
 clap = { version = "4.4.2", features = ["derive"] }
-env_logger = "0.10.0"
+env_logger = "0.11.5"
 futures = { version = "0.3.28", default-features = false, features = ["std"] }
 indicatif = { version = "0.17.6", features = ["futures"] }
 joinery = "3.1.0"
 lazy_format = "2.0.3"
 log = "0.4.20"
 regex = "1.9.4"
-reqwest = { version = "0.11.20", features = ["gzip", "json"] }
+reqwest = { version = "0.12.9", features = ["gzip", "json"] }
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.105"
 tokio = { version = "1.32.0", features = ["full"] }
