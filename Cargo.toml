@@ -10,6 +10,12 @@ authors = ["Erich Gubler <erichdongubler@gmail.com>"]
 
 [package.metadata.binstall]
 
+[package.metadata.wix]
+upgrade-guid = "B8700EB0-65FD-4E8D-971C-B986B3325C7A"
+path-guid = "F49D9950-A4B4-41EA-BA5C-1ED2FAD16A0A"
+license = false
+eula = false
+
 [dependencies]
 bytes = "1"
 clap = { version = "4.4.2", features = ["derive"] }
@@ -33,8 +39,8 @@ lto = "thin"
 [workspace.metadata.dist]
 cargo-dist-version = "0.19.1"
 rust-toolchain-version = "1.67.1"
-installers = ["shell", "powershell"]
 ci = "github"
+installers = ["shell", "powershell", "msi"]
 targets = ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 install-path = "CARGO_HOME"
 pr-run-mode = "plan"
