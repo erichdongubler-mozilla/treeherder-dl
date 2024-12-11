@@ -12,7 +12,7 @@ rust-version = "1.70.0"
 [dependencies]
 bytes = "1"
 clap = { version = "4.4.2", features = ["derive"] }
-env_logger = "0.10.0"
+env_logger = "0.11.5"
 futures = { version = "0.3.28", default-features = false, features = ["std"] }
 indicatif = { version = "0.17.6", features = ["futures"] }
 joinery = "3.1.0"
