@@ -188,7 +188,13 @@ async fn main() {
 
     let Cli { options, revisions } = Cli::parse();
 
-    let client = Client::builder().gzip(true).build().unwrap();
+    static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+
+    let client = Client::builder()
+        .gzip(true)
+        .user_agent(APP_USER_AGENT)
+        .build()
+        .unwrap();
 
     for rev_ref in revisions {
         get_artifacts_for_revision(&client, &options, &rev_ref).await
