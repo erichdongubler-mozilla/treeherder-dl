@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     fs,
     num::NonZeroU8,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::exit,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -181,6 +181,19 @@ impl FromStr for RevisionRef {
     }
 }
 
+#[derive(Debug)]
+struct DlOpConfig<'a> {
+    out_dir: &'a Path,
+    revision: &'a str,
+    job_type_name_regex: Option<&'a Regex>,
+    artifact_names: &'a [String],
+    max_parallel_artifact_downloads: NonZeroU8,
+    project_name: &'a str,
+    treeherder_host: &'a Url,
+    taskcluster_host: &'a Url,
+    dry_run: bool,
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::builder()
@@ -198,13 +211,42 @@ async fn main() {
         .build()
         .unwrap();
 
+    let Options {
+        artifact_names,
+        max_parallel_artifact_downloads,
+        taskcluster_host,
+        out_dir,
+        job_type_name_regex,
+        treeherder_host,
+        dry_run,
+    } = options;
+
     for rev_ref in revisions {
-        get_artifacts_for_revision(&client, &options, &rev_ref).await
+        let RevisionRef {
+            project: project_name,
+            hash: revision,
+        } = &rev_ref;
+
+        let dl_op_config = DlOpConfig {
+            artifact_names: &artifact_names,
+            job_type_name_regex: job_type_name_regex.as_ref(),
+            max_parallel_artifact_downloads,
+            out_dir: &out_dir,
+            project_name,
+            revision,
+            taskcluster_host: &taskcluster_host,
+            treeherder_host: &treeherder_host,
+            dry_run,
+        };
+
+        get_artifacts_for_revision(&client, &dl_op_config).await
     }
 }
 
-async fn get_artifacts_for_revision(client: &Client, options: &Options, revision: &RevisionRef) {
-    let Options {
+async fn get_artifacts_for_revision(client: &Client, options: &DlOpConfig<'_>) {
+    let DlOpConfig {
+        revision,
+        project_name,
         out_dir,
         job_type_name_regex,
         artifact_names,
@@ -213,10 +255,6 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
         taskcluster_host,
         dry_run,
     } = options;
-    let RevisionRef {
-        project: project_name,
-        hash: revision,
-    } = revision;
 
     log::info!("fetching for revision(s): {:?}", [&revision]);
 
@@ -252,8 +290,8 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
         .await
         .unwrap();
 
-    if let Some(job_type_name_regex) = job_type_name_regex {
-        jobs.retain(|job| job_type_name_regex.is_match(&job.job_type_name));
+    if let Some(re) = job_type_name_regex {
+        jobs.retain(|job| re.is_match(&job.job_type_name));
     }
 
     if jobs.is_empty() {
