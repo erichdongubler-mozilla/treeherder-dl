@@ -156,6 +156,8 @@ struct Options {
     treeherder_host: Url,
     #[clap(long, default_value = "https://firefox-ci-tc.services.mozilla.com")]
     taskcluster_host: Url,
+    #[clap(short, long)]
+    dry_run: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -209,6 +211,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
         max_parallel_artifact_downloads,
         treeherder_host,
         taskcluster_host,
+        dry_run,
     } = options;
     let RevisionRef {
         project: project_name,
@@ -390,6 +393,10 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
                 return;
             }
 
+            if *dry_run {
+                return;
+            }
+
             let artifact = match get_artifact(
                 client,
                 taskcluster_host,
@@ -435,6 +442,11 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
             progress_bar.inc(1)
         })
         .await;
+    progress_bar.suspend(|| {
+        if *dry_run {
+            log::warn!("no action performed, because `--dry-run` was specified")
+        }
+    })
 }
 
 async fn get_artifact(
