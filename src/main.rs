@@ -185,13 +185,18 @@ impl FromStr for RevisionRef {
 struct DlOpConfig<'a> {
     out_dir: &'a Path,
     revision: &'a str,
-    job_type_name_regex: Option<&'a Regex>,
+    job_type_name_matcher: Option<&'a Matcher>,
     artifact_names: &'a [String],
     max_parallel_artifact_downloads: NonZeroU8,
     project_name: &'a str,
     treeherder_host: &'a Url,
     taskcluster_host: &'a Url,
     dry_run: bool,
+}
+
+#[derive(Debug)]
+enum Matcher {
+    Regex(Regex),
 }
 
 #[tokio::main]
@@ -220,6 +225,7 @@ async fn main() {
         treeherder_host,
         dry_run,
     } = options;
+    let job_type_name_matcher = job_type_name_regex.map(Matcher::Regex);
 
     for rev_ref in revisions {
         let RevisionRef {
@@ -229,7 +235,7 @@ async fn main() {
 
         let dl_op_config = DlOpConfig {
             artifact_names: &artifact_names,
-            job_type_name_regex: job_type_name_regex.as_ref(),
+            job_type_name_matcher: job_type_name_matcher.as_ref(),
             max_parallel_artifact_downloads,
             out_dir: &out_dir,
             project_name,
@@ -248,7 +254,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &DlOpConfig<'_>) {
         revision,
         project_name,
         out_dir,
-        job_type_name_regex,
+        job_type_name_matcher,
         artifact_names,
         max_parallel_artifact_downloads,
         treeherder_host,
@@ -290,8 +296,11 @@ async fn get_artifacts_for_revision(client: &Client, options: &DlOpConfig<'_>) {
         .await
         .unwrap();
 
-    if let Some(re) = job_type_name_regex {
-        jobs.retain(|job| re.is_match(&job.job_type_name));
+    if let Some(job_type_name_matcher) = job_type_name_matcher {
+        let matching_jobs: Box<dyn Fn(&Job) -> _> = match job_type_name_matcher {
+            Matcher::Regex(re) => Box::new(move |job| re.is_match(&job.job_type_name)),
+        };
+        jobs.retain(matching_jobs);
     }
 
     if jobs.is_empty() {
