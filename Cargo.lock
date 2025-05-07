@@ -1484,7 +1484,7 @@ dependencies = [
 
 [[package]]
 name = "treeherder-dl"
-version = "2.1.2"
+version = "2.2.0"
 dependencies = [
  "bytes",
  "clap",
