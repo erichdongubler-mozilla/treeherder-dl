@@ -3,11 +3,12 @@ use std::{
     fs,
     num::NonZeroU8,
     path::PathBuf,
-    process::exit,
+    process::ExitCode,
     str::FromStr,
     sync::{Arc, Mutex},
 };
 
+use anyhow::Context as _;
 use bytes::Bytes;
 use clap::Parser;
 use futures::stream::StreamExt;
@@ -182,7 +183,7 @@ impl FromStr for RevisionRef {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .parse_default_env()
@@ -198,12 +199,25 @@ async fn main() {
         .build()
         .unwrap();
 
+    let mut exit_code = ExitCode::SUCCESS;
     for rev_ref in revisions {
-        get_artifacts_for_revision(&client, &options, &rev_ref).await
+        match get_artifacts_for_revision(&client, &options, &rev_ref).await {
+            Ok(()) => (),
+            Err(AlreadyReportedToCommandLine) => {
+                exit_code = 1.into();
+            }
+        }
     }
+    exit_code
 }
 
-async fn get_artifacts_for_revision(client: &Client, options: &Options, revision: &RevisionRef) {
+struct AlreadyReportedToCommandLine;
+
+async fn get_artifacts_for_revision(
+    client: &Client,
+    options: &Options,
+    revision: &RevisionRef,
+) -> Result<(), AlreadyReportedToCommandLine> {
     let Options {
         out_dir,
         job_type_name_regex,
@@ -220,37 +234,73 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
 
     log::info!("fetching for revision(s): {:?}", [&revision]);
 
+    let revision_url =
+        format!("{treeherder_host}api/project/{project_name}/push/?revision={revision}");
+
+    let response = {
+        match client
+            .get(&revision_url)
+            .send()
+            .await
+            .map_err(anyhow::Error::new)
+        {
+            Ok(ok) => ok,
+            Err(e) => {
+                log::error!("failed to `GET` `{revision_url}`: {e:?}");
+                return Err(AlreadyReportedToCommandLine);
+            }
+        }
+    };
+
     let Revision {
         meta: RevisionMeta { count },
         mut results,
-    } = client
-        .get(format!(
-            "{treeherder_host}api/project/{project_name}/push/?revision={revision}"
-        ))
-        .send()
-        .await
-        .unwrap()
+    } = match response
         .json::<Revision>()
         .await
-        .unwrap();
+        .with_context(|| format!("failed to parse response from `GET`ting `{revision_url}`"))
+    {
+        Ok(ok) => ok,
+        Err(e) => {
+            log::error!("{e:?}");
+            return Err(AlreadyReportedToCommandLine);
+        }
+    };
 
     assert!(results.len() == usize::try_from(count).unwrap());
     if count > 1 {
         log::warn!("more than one `result` found for specified push");
     } else if count == 0 {
         log::error!("no `results` found; does the push you specified exist?");
-        exit(1);
+        return Err(AlreadyReportedToCommandLine);
     }
     let RevisionResult { id: push_id } = results.pop().unwrap();
 
-    let Jobs(mut jobs) = client
-        .get(format!("{treeherder_host}api/jobs/?push_id={push_id}"))
+    let push_url = format!("{treeherder_host}api/jobs/?push_id={push_id}");
+
+    let response = match client
+        .get(&push_url)
         .send()
         .await
-        .unwrap()
-        .json::<Jobs>()
-        .await
-        .unwrap();
+        .with_context(|| format!("failed to `GET` `{push_url}`"))
+    {
+        Ok(ok) => ok,
+        Err(e) => {
+            log::error!("{e:?}");
+            return Err(AlreadyReportedToCommandLine);
+        }
+    };
+
+    let Jobs(mut jobs) =
+        match response.json::<Jobs>().await.with_context(|| {
+            format!("failed to parse response from `GET`ting job URL `{push_url}`")
+        }) {
+            Ok(ok) => ok,
+            Err(e) => {
+                log::error!("{e:?}");
+                return Err(AlreadyReportedToCommandLine);
+            }
+        };
 
     if let Some(job_type_name_regex) = job_type_name_regex {
         jobs.retain(|job| job_type_name_regex.is_match(&job.job_type_name));
@@ -258,7 +308,7 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
 
     if jobs.is_empty() {
         log::warn!("no jobs selected, exiting");
-        return;
+        return Ok(());
     }
 
     if log::log_enabled!(log::Level::Info) {
@@ -446,7 +496,9 @@ async fn get_artifacts_for_revision(client: &Client, options: &Options, revision
         if *dry_run {
             log::warn!("no action performed, because `--dry-run` was specified")
         }
-    })
+    });
+
+    Ok(())
 }
 
 async fn get_artifact(
