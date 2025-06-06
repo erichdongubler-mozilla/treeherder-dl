@@ -5,8 +5,6 @@ members = ["cargo:."]
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.28.0"
-# The preferred Rust toolchain to use in CI (rustup toolchain syntax)
-rust-toolchain-version = "1.67.1"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
@@ -22,3 +20,4 @@ install-updater = false
 
 [dist.github-custom-runners]
 global = "ubuntu-latest"
+x86_64-unknown-linux-gnu.runner = "ubuntu-latest"
