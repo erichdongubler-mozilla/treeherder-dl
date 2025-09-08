@@ -191,6 +191,11 @@ async fn main() -> ExitCode {
 
     let Cli { options, revisions } = Cli::parse();
 
+    if revisions.is_empty() {
+        log::error!("no revisions specified; scripting error?");
+        return ExitCode::FAILURE;
+    }
+
     static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
     let client = Client::builder()
