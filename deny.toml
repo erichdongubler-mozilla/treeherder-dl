@@ -4,7 +4,10 @@ allow = [
 	"Apache-2.0 WITH LLVM-exception",
 	"Apache-2.0",
 	"BSD-3-Clause",
+	"CDLA-Permissive-2.0",
+	"ISC",
 	"MIT",
 	"MPL-2.0",
+	"OpenSSL",
 	"Unicode-3.0",
 ]
