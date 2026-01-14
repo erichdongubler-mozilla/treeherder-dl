@@ -282,7 +282,9 @@ async fn get_artifacts_for_revision(
     if count > 1 {
         log::warn!("more than one `result` found for specified push");
     } else if count == 0 {
-        log::error!("no `results` found; does the push you specified exist?");
+        log::error!(
+            "no `results` found; does the push you specified exist at the specified project?"
+        );
         return Err(AlreadyReportedToCommandLine);
     }
     let RevisionResult { id: push_id } = results.pop().unwrap();
