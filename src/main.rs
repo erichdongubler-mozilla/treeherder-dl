@@ -232,7 +232,10 @@ async fn get_artifacts_for_revision(
         hash: revision,
     } = revision;
 
-    log::info!("fetching for revision(s): {:?}", [&revision]);
+    log::info!(
+        "fetching revision(s) from `{project_name}`: {:?}",
+        [&revision]
+    );
 
     let revision_url =
         format!("{treeherder_host}api/project/{project_name}/push/?revision={revision}");
