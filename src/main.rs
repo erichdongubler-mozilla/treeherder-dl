@@ -134,11 +134,19 @@ struct Job {
     platform_option: String,
 }
 
+/// Downloads artifacts from a TreeHerder instance\[1\] and places them in a directory with
+/// directory structures for ease of navigation.
+///
+/// By default, Mozilla's corporate instance is the host.
+///
+/// [1]: https://github.com/mozilla/treeherder
 #[derive(Debug, Parser)]
 #[clap(about, version)]
 struct Cli {
     #[clap(flatten)]
     options: Options,
+    /// Refs. to the revision at the tip of TreeHerder push(es), of the form
+    /// `<project>:<hash>`.
     #[clap(value_parser = RevisionRef::from_str)]
     revisions: Vec<RevisionRef>,
 }
