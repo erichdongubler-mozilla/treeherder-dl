@@ -139,6 +139,8 @@ struct Job {
 struct Cli {
     #[clap(flatten)]
     options: Options,
+    /// Refs. to the revision at the tip of TreeHerder push(es), of the form
+    /// `<project>:<hash>`.
     #[clap(value_parser = RevisionRef::from_str)]
     revisions: Vec<RevisionRef>,
 }
