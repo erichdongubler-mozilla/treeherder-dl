@@ -146,7 +146,7 @@ struct Cli {
     #[clap(flatten)]
     options: Options,
     /// Refs. to the revision at the tip of TreeHerder push(es), of the form
-    /// `<project>:<hash>`.
+    /// `[<project>:]<hash>`.
     #[clap(value_parser = RevisionRef::from_str)]
     revisions: Vec<RevisionRef>,
 }
@@ -179,12 +179,21 @@ impl FromStr for RevisionRef {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.split_once(':')
-            .map(|(project, hash)| Self {
-                project: project.to_owned(),
-                hash: hash.to_owned(),
-            })
-            .ok_or("no dividing colon found; expected revision ref. of the form <project>:<hash>")
+        let project;
+        let hash;
+
+        if let Some((p, h)) = s.split_once(':') {
+            project = p;
+            hash = h;
+        } else {
+            project = "try";
+            hash = s;
+        }
+
+        Ok(Self {
+            project: project.to_owned(),
+            hash: hash.to_owned(),
+        })
     }
 }
 
