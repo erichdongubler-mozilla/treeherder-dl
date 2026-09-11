@@ -147,7 +147,7 @@ struct Cli {
     #[clap(flatten)]
     options: Options,
     /// Refs. to the revision at the tip of TreeHerder push(es), of the form
-    /// `<project>:<hash>`.
+    /// `[<project>:]<hash>`.
     #[clap(value_parser = RevisionRef::from_str)]
     revisions: Vec<RevisionRef>,
 }
@@ -181,7 +181,8 @@ impl FromStr for RevisionRef {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.split_once(':')
-            .ok_or("no dividing colon found; expected revision ref. of the form <project>:<hash>")
+            .ok_or(())
+            .or(Ok(("try", s)))
             .and_then(|(project, hash)| {
                 if !hash.chars().all(|c| c.is_ascii_hexdigit()) {
                     return Err("expected all characters to be case-insensitive ASCII hex digits");
