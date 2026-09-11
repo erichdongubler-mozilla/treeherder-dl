@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     collections::{BTreeMap, HashSet},
     fs,
     num::NonZeroU8,
@@ -194,11 +195,27 @@ impl FromStr for RevisionRef {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.split_once(':')
-            .map(|(project, hash)| Self {
-                project: project.to_owned(),
-                hash: hash.to_owned(),
-            })
             .ok_or("no dividing colon found; expected revision ref. of the form <project>:<hash>")
+            .and_then(|(project, hash)| {
+                if !hash.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')) {
+                    return Err("expected all characters to be lowercase ASCII hex digits");
+                }
+
+                match hash.len().cmp(&40) {
+                    Ordering::Equal => (),
+                    Ordering::Less => {
+                        return Err(
+                            "hash is not 40 characters; shorter hashes are not allowed (yet?)",
+                        )
+                    }
+                    Ordering::Greater => return Err("hash is not 40 characters"),
+                }
+
+                Ok(Self {
+                    project: project.to_owned(),
+                    hash: hash.to_owned(),
+                })
+            })
     }
 }
 
