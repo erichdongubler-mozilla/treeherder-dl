@@ -36,21 +36,32 @@ struct RevisionResult {
     id: u32,
 }
 
+/// A single page of the paginated `api/jobs/` endpoint.
 #[derive(Debug)]
-struct Jobs(Vec<Job>);
+struct JobsPage {
+    /// The number of jobs in the push as a whole, _not_ in this page.
+    count: u32,
+    /// `Some(…)` if the server has further pages for us to fetch.
+    next: Option<String>,
+    jobs: Vec<Job>,
+}
 
-impl<'de> serde::de::Deserialize<'de> for Jobs {
+impl<'de> serde::de::Deserialize<'de> for JobsPage {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::de::Deserializer<'de>,
     {
         #[derive(Debug, Deserialize)]
         struct JobsArena {
+            count: u32,
+            next: Option<String>,
             job_property_names: Vec<String>,
             results: Vec<Vec<Value>>,
         }
 
         let JobsArena {
+            count,
+            next,
             job_property_names,
             results,
         } = Deserialize::deserialize(deserializer)?;
@@ -103,7 +114,7 @@ impl<'de> serde::de::Deserialize<'de> for Jobs {
                     }
                 }).collect::<Vec<_>>();
 
-                Ok(Jobs(jobs))
+                Ok(JobsPage { count, next, jobs })
                 // OPT: Optimal way to do this is likely to identify the next `nth` offset
             };
         }
@@ -287,23 +298,33 @@ async fn get_artifacts_for_revision(
     }
     let RevisionResult { id: push_id } = results.pop().unwrap();
 
-    let push_url = format!("{treeherder_host}api/jobs/?push_id={push_id}");
+    // `api/jobs/` is paginated (2000 jobs per page, at time of writing), and a single push on a
+    // busy repository like `autoland` comfortably exceeds that. Keep asking for pages until the
+    // server stops offering us a `next` one, or we'll silently analyze only a prefix of the push.
+    let mut jobs = Vec::new();
+    let mut expected_count = None;
+    let mut page_idx = 1u32;
+    loop {
+        let push_url = format!("{treeherder_host}api/jobs/?push_id={push_id}&page={page_idx}");
 
-    let response = match client
-        .get(&push_url)
-        .send()
-        .await
-        .with_context(|| format!("failed to `GET` `{push_url}`"))
-    {
-        Ok(ok) => ok,
-        Err(e) => {
-            log::error!("{e:?}");
-            return Err(AlreadyReportedToCommandLine);
-        }
-    };
+        let response = match client
+            .get(&push_url)
+            .send()
+            .await
+            .with_context(|| format!("failed to `GET` `{push_url}`"))
+        {
+            Ok(ok) => ok,
+            Err(e) => {
+                log::error!("{e:?}");
+                return Err(AlreadyReportedToCommandLine);
+            }
+        };
 
-    let Jobs(mut jobs) =
-        match response.json::<Jobs>().await.with_context(|| {
+        let JobsPage {
+            count,
+            next,
+            jobs: page_jobs,
+        } = match response.json::<JobsPage>().await.with_context(|| {
             format!("failed to parse response from `GET`ting job URL `{push_url}`")
         }) {
             Ok(ok) => ok,
@@ -312,6 +333,33 @@ async fn get_artifacts_for_revision(
                 return Err(AlreadyReportedToCommandLine);
             }
         };
+
+        let expected_count = *expected_count.get_or_insert(count);
+        jobs.extend(page_jobs);
+        log::debug!(
+            "fetched page {page_idx} of jobs ({}/{expected_count} so far)",
+            jobs.len()
+        );
+
+        // NOTE: We deliberately page by index against `treeherder_host`, rather than following
+        // `next` verbatim, so that a `--treeherder-host` override is honored for every request.
+        if next.is_none() {
+            break;
+        }
+        page_idx = page_idx.checked_add(1).unwrap();
+    }
+
+    // Jobs can be created while we page, so this is a sanity check, not an invariant.
+    if let Some(expected_count) = expected_count {
+        let actual_count = u32::try_from(jobs.len()).unwrap();
+        if actual_count != expected_count {
+            log::warn!(
+                "expected {expected_count} job(s) from `{treeherder_host}api/jobs/`, but \
+                collected {actual_count} across {page_idx} page(s)"
+            );
+        }
+    }
+    log::info!("found {} job(s) in push {push_id}", jobs.len());
 
     if let Some(job_type_name_regex) = job_type_name_regex {
         jobs.retain(|job| job_type_name_regex.is_match(&job.job_type_name));
