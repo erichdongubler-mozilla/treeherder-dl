@@ -5,7 +5,6 @@ use std::{
     path::PathBuf,
     process::ExitCode,
     str::FromStr,
-    sync::{Arc, Mutex},
 };
 
 use anyhow::Context as _;
@@ -116,6 +115,7 @@ impl<'de> serde::de::Deserialize<'de> for Jobs {
             result,
             state,
             task_id,
+            retry_id,
             platform_option,
         }
     }
@@ -132,6 +132,9 @@ struct Job {
     state: String,
     task_id: String,
     platform_option: String,
+    /// The Taskcluster run index this job corresponds to; a task that has been retried has
+    /// several jobs, distinguished only by this field.
+    retry_id: u32,
 }
 
 /// Downloads artifacts from a TreeHerder instance\[1\] and places them in a directory with
@@ -364,11 +367,9 @@ async fn get_artifacts_for_revision(
     progress_bar.tick(); // Force the progress bar to show now, rather than waiting until first
                          // completion of a download.
 
-    let run_counts = Arc::new(Mutex::new(BTreeMap::new()));
     let artifacts = artifacts.then(|(job, artifact_name)| {
         let client = &client;
         let out_dir = &out_dir;
-        let run_counts = &run_counts;
         let taskcluster_host = &taskcluster_host;
         let progress_bar = progress_bar.clone();
         async move {
@@ -380,23 +381,16 @@ async fn get_artifacts_for_revision(
                 task_id,
                 platform_option,
                 id,
+                retry_id,
                 ..
             } = job;
 
-            let this_run_idx: u32;
-            {
-                let mut run_counts = run_counts.lock().unwrap();
-                let run_count = run_counts.entry(task_id.clone()).or_insert(0);
-                this_run_idx = *run_count;
-                *run_count += 1;
-            }
-
             let job_display = lazy_format!(
-                "job {}, task {} (`{}`, index {})",
+                "job {}, task {} (`{}`, retry ID {})",
                 id,
                 task_id,
                 job_type_name,
-                this_run_idx,
+                retry_id,
             );
 
             let is_complete = job.state == "completed";
@@ -436,7 +430,7 @@ async fn get_artifacts_for_revision(
                     job_group_symbol,
                     job_type_symbol,
                     task_id,
-                    &this_run_idx,
+                    &retry_id,
                     artifact_name,
                 ];
                 out_dir.join(segments.iter().join_with('/').to_string())
@@ -458,31 +452,26 @@ async fn get_artifacts_for_revision(
                 return;
             }
 
-            let artifact = match get_artifact(
-                client,
-                taskcluster_host,
-                task_id,
-                artifact_name,
-                this_run_idx,
-            )
-            .await
-            {
-                Ok(bytes) => bytes,
-                Err(code) => {
-                    progress_bar.suspend(|| {
-                        log::error!(
-                            concat!(
-                                "got unexpected response {} with request for {}, ",
-                                "artifact {:?}; skipping download"
-                            ),
-                            code,
-                            job_display,
-                            artifact_name
-                        );
-                    });
-                    return;
-                }
-            };
+            let artifact =
+                match get_artifact(client, taskcluster_host, task_id, artifact_name, *retry_id)
+                    .await
+                {
+                    Ok(bytes) => bytes,
+                    Err(code) => {
+                        progress_bar.suspend(|| {
+                            log::error!(
+                                concat!(
+                                    "got unexpected response {} with request for {}, ",
+                                    "artifact {:?}; skipping download"
+                                ),
+                                code,
+                                job_display,
+                                artifact_name
+                            );
+                        });
+                        return;
+                    }
+                };
 
             {
                 let parent_dir = local_artifact_path.parent().unwrap();
@@ -517,10 +506,10 @@ async fn get_artifact(
     taskcluster_host: &Url,
     task_id: &str,
     artifact_name: &str,
-    run_idx: u32,
+    retry_id: u32,
 ) -> Result<Bytes, StatusCode> {
     let url = format!(
-        "{taskcluster_host}api/queue/v1/task/{task_id}/runs/{run_idx}/artifacts/{artifact_name}"
+        "{taskcluster_host}api/queue/v1/task/{task_id}/runs/{retry_id}/artifacts/{artifact_name}"
     );
 
     let request = client.get(url);
