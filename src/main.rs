@@ -149,6 +149,25 @@ struct Job {
     retry_id: u32,
 }
 
+const EXAMPLES: &str = r#"Examples:
+
+  # Download the backing log for every job in a `try` push (project omitted).
+  treeherder-dl --out-dir ./artifacts \
+    --artifact public/logs/live_backing.log \
+    1b2e3c4d5f60718293a4b5c6d7e8f90123456789
+
+  # Same, but for a push on `autoland`, and only WPT jobs.
+  treeherder-dl --out-dir ./artifacts \
+    --job-type-re 'web-platform-tests' \
+    --artifact public/test_info/wptreport.json \
+    autoland:96d0d3eb9f85dd16ed1b56a20f010160f95138ac
+
+  # Several pushes at once, mixing projects; preview without downloading.
+  treeherder-dl --out-dir ./artifacts --dry-run \
+    --artifact public/logs/live_backing.log \
+    1b2e3c4d5f60718293a4b5c6d7e8f90123456789 \
+    autoland:96d0d3eb9f85dd16ed1b56a20f010160f95138ac"#;
+
 /// Downloads artifacts from a TreeHerder instance\[1\] and places them in a directory with
 /// directory structures for ease of navigation.
 ///
@@ -156,7 +175,7 @@ struct Job {
 ///
 /// [1]: https://github.com/mozilla/treeherder
 #[derive(Debug, Parser)]
-#[clap(about, version)]
+#[clap(about, version, after_long_help = EXAMPLES)]
 struct Cli {
     #[clap(flatten)]
     options: Options,
