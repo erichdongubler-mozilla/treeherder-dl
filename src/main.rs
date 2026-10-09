@@ -35,21 +35,32 @@ struct RevisionResult {
     id: u32,
 }
 
+/// A single page of the paginated `api/jobs/` endpoint.
 #[derive(Debug)]
-struct Jobs(Vec<Job>);
+struct JobsPage {
+    /// The number of jobs in the push as a whole, _not_ in this page.
+    all_jobs_count: u32,
+    /// `Some(…)` if the server has further pages for us to fetch.
+    next: Option<String>,
+    jobs: Vec<Job>,
+}
 
-impl<'de> serde::de::Deserialize<'de> for Jobs {
+impl<'de> serde::de::Deserialize<'de> for JobsPage {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::de::Deserializer<'de>,
     {
         #[derive(Debug, Deserialize)]
         struct JobsArena {
+            count: u32,
+            next: Option<String>,
             job_property_names: Vec<String>,
             results: Vec<Vec<Value>>,
         }
 
         let JobsArena {
+            count: all_jobs_count,
+            next,
             job_property_names,
             results,
         } = Deserialize::deserialize(deserializer)?;
@@ -102,7 +113,7 @@ impl<'de> serde::de::Deserialize<'de> for Jobs {
                     }
                 }).collect::<Vec<_>>();
 
-                Ok(Jobs(jobs))
+                Ok(JobsPage { all_jobs_count, next, jobs })
                 // OPT: Optimal way to do this is likely to identify the next `nth` offset
             };
         }
@@ -290,23 +301,29 @@ async fn get_artifacts_for_revision(
     }
     let RevisionResult { id: push_id } = results.pop().unwrap();
 
-    let push_url = format!("{treeherder_host}api/jobs/?push_id={push_id}");
+    let mut jobs = Vec::new();
+    let mut expected_all_jobs_count = None;
+    let mut page_count = 0usize;
+    let mut next_url = Some(format!("{treeherder_host}api/jobs/?push_id={push_id}"));
+    while let Some(push_url) = next_url.take() {
+        let response = match client
+            .get(&push_url)
+            .send()
+            .await
+            .with_context(|| format!("failed to `GET` `{push_url}`"))
+        {
+            Ok(ok) => ok,
+            Err(e) => {
+                log::error!("{e:?}");
+                return Err(AlreadyReportedToCommandLine);
+            }
+        };
 
-    let response = match client
-        .get(&push_url)
-        .send()
-        .await
-        .with_context(|| format!("failed to `GET` `{push_url}`"))
-    {
-        Ok(ok) => ok,
-        Err(e) => {
-            log::error!("{e:?}");
-            return Err(AlreadyReportedToCommandLine);
-        }
-    };
-
-    let Jobs(mut jobs) =
-        match response.json::<Jobs>().await.with_context(|| {
+        let JobsPage {
+            all_jobs_count,
+            next,
+            jobs: page_jobs,
+        } = match response.json::<JobsPage>().await.with_context(|| {
             format!("failed to parse response from `GET`ting job URL `{push_url}`")
         }) {
             Ok(ok) => ok,
@@ -315,6 +332,29 @@ async fn get_artifacts_for_revision(
                 return Err(AlreadyReportedToCommandLine);
             }
         };
+
+        let expected_count = *expected_all_jobs_count.get_or_insert(all_jobs_count);
+        jobs.extend(page_jobs);
+        page_count += 1;
+        log::debug!(
+            "fetched page {page_count} of jobs ({}/{expected_count} so far)",
+            jobs.len()
+        );
+
+        next_url = next;
+    }
+
+    // NOTE: Jobs can be created while we page. Emit a diagnostic, just in case it helps.
+    if let Some(expected_count) = expected_all_jobs_count {
+        let actual_count = u32::try_from(jobs.len()).unwrap();
+        if actual_count != expected_count {
+            log::warn!(
+                "expected {expected_count} job(s) from `{treeherder_host}api/jobs/`, but \
+                collected {actual_count} across {page_count} page(s)"
+            );
+        }
+    }
+    log::info!("found {} job(s) in push {push_id}", jobs.len());
 
     if let Some(job_type_name_regex) = job_type_name_regex {
         jobs.retain(|job| job_type_name_regex.is_match(&job.job_type_name));
