@@ -443,7 +443,7 @@ async fn get_artifacts_for_revision(
     progress_bar.tick(); // Force the progress bar to show now, rather than waiting until first
                          // completion of a download.
 
-    let artifacts = artifacts.then(|(job, artifact_name)| {
+    let artifacts = artifacts.map(|(job, artifact_name)| {
         let client = &client;
         let out_dir = &out_dir;
         let taskcluster_host = &taskcluster_host;
@@ -564,9 +564,8 @@ async fn get_artifacts_for_revision(
     });
     let max_parallel_artifact_downloads = usize::from(max_parallel_artifact_downloads.get());
     artifacts
-        .for_each_concurrent(max_parallel_artifact_downloads, |()| async {
-            progress_bar.inc(1)
-        })
+        .buffer_unordered(max_parallel_artifact_downloads)
+        .for_each(|()| async { progress_bar.inc(1) })
         .await;
     progress_bar.suspend(|| {
         if *dry_run {
